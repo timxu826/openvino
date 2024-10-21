@@ -854,6 +854,9 @@ std::shared_ptr<ov::Node> ov::XmlDeserializer::create_node(const std::vector<ov:
 
     // Find registered opset
     auto opsetIt = m_opsets.find(params.version);
+    if (type_name == "NonZero") {
+        std::cout << "Node Name0: " << params.name << std::endl;
+    }
 
     // Try to create operation from loaded opsets
     static const std::unordered_set<std::string> experimental_ops_added_to_opset = {
@@ -871,6 +874,9 @@ std::shared_ptr<ov::Node> ov::XmlDeserializer::create_node(const std::vector<ov:
         opsetIt = m_opsets.find("opset6");
     }
 
+    if (type_name == "NonZero") {
+        std::cout << "Node Name1: " << params.name << std::endl;
+    }
     if (!ovNode && opsetIt != m_opsets.end()) {
         if (params.version == "opset1") {
             // MVN, ROIPooling and ReorgYolo were missing in opset1
@@ -909,6 +915,9 @@ std::shared_ptr<ov::Node> ov::XmlDeserializer::create_node(const std::vector<ov:
         // To be sure that all default values will be initialized:
         ovNode = ovNode->clone_with_new_inputs(ovNode->input_values());
     }
+    if (type_name == "NonZero") {
+        std::cout << "Node Name2: " << params.name << std::endl;
+    }
     if (!ovNode && m_extensions.count(ov::op::util::FrameworkNode::get_type_info_static())) {
         ovNode = std::make_shared<ov::op::util::FrameworkNode>(inputs);
         XmlDeserializer visitor(node, weights, m_opsets, m_extensions, m_variables, m_version);
@@ -919,6 +928,10 @@ std::shared_ptr<ov::Node> ov::XmlDeserializer::create_node(const std::vector<ov:
             ovNode->set_output_type(index, output_params.precision, ov::PartialShape(output_params.dims));
             ++index;
         }
+    }
+
+    if (type_name == "NonZero") {
+        std::cout << "Node Name3: " << params.name << std::endl;
     }
 
     if (!ovNode) {

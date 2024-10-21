@@ -77,6 +77,7 @@ void NonZero::validate_and_infer_types() {
                           "Output type must be i32 or i64");
     // For scalar non-zero value case, onnx test case expects output shape {1, 1}
     const auto& input_shape = get_input_partial_shape(0);
+    std::cout << "Name: " << get_name() << std::endl;
     if (input_shape.rank().compatible(0)) {
         set_output_type(0, m_output_type, PartialShape::dynamic(2));
     } else {

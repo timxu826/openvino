@@ -45,6 +45,9 @@ struct primitive_type_base : primitive_type {
         try {
             OPENVINO_ASSERT(node.type() == this, "[GPU] primitive_type_base::choose_impl: primitive type mismatch");
             auto factory = implementation_map<PType>::get(runtime_params, node.get_preferred_impl_type(), get_shape_type(runtime_params));
+            if (node.id() == "nonzero:NonZero_203410") {
+                printf("found.\n");
+            }
             auto impl = factory(node, runtime_params);
             impl->set_dynamic(get_shape_type(runtime_params) == shape_types::dynamic_shape);
             impl->can_share_kernels = node.get_program().get_config().get_property(ov::intel_gpu::hint::enable_kernels_reuse);

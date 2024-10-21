@@ -153,6 +153,8 @@
 #include "transformations/rt_info/keep_const_precision.hpp"
 #include "transformations/smart_reshape/matmul_sr.hpp"
 
+#include "openvino/pass/visualize_tree.hpp"
+
 namespace {
 template<typename T>
 static bool disable_reduce_decomposition(const std::shared_ptr<const ov::Node> node) {
@@ -888,6 +890,9 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
 
         manager.run_passes(func);
     }
+
+     ov::serialize(func, "xytest.xml");
+     ov::pass::VisualizeTree("xytest.svg").run_on_model(func);
 }
 }  // namespace intel_gpu
 }  // namespace ov

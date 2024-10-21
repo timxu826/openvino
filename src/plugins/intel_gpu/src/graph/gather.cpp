@@ -13,6 +13,79 @@
 namespace cldnn {
 GPU_DEFINE_PRIMITIVE_TYPE_ID(gather)
 
+template <class T>
+void dump2(memory::ptr mem, stream& stream, bool dump_raw, int output_num) {
+    auto&& size = mem->get_layout().get_tensor();
+
+    GPU_DEBUG_GET_INSTANCE(debug_config);
+    auto batch_size = std::max(std::min(debug_config->dump_layers_limit_batch, size.batch[0]), 1);
+    tensor tmp_size(size);
+    tmp_size.batch[0] = batch_size;
+    if (tmp_size == size) {
+        std::cout << "shape: " << size.to_string() << " ";
+        std::cout << "(count: " << size.count()
+                    << (dump_raw ? " raw data" : "") << std::endl;
+    } else {
+        std::cout << "shape: " << tmp_size.to_string() << " ";
+        std::cout << "(count: " << tmp_size.count()
+                    << ", original shape: " << size.to_string() << ")"
+                    << (dump_raw ? " raw data" : "") << std::endl;
+    }
+
+    if (size.count() == 0) {
+        std::cout << "Empty buffer" << std::endl;
+        return;
+    }
+
+    mem_lock<T, mem_lock_type::read> lock(mem, stream);
+    auto mem_ptr = lock.data();
+
+    auto layout = mem->get_layout();
+    size_t x_pitch;
+
+    try {
+        auto tensor_x0 = tensor(batch(0), feature(0), spatial(0, 0, 0, 0));
+        auto tensor_x1 = tensor(batch(0), feature(0), spatial(1, 0, 0, 0));
+        auto x0 = layout.get_linear_offset(tensor_x0);
+        auto x1 = layout.get_linear_offset(tensor_x1);
+        x_pitch =  (x1 - x0);
+    } catch (...) {
+        // When spatial size of x=0, x_pitch is meaningless
+        x_pitch = 0;
+    }
+    std::stringstream buffer;
+
+    int cnt = 0;
+    if (!dump_raw) {
+        for (cldnn::tensor::value_type g = 0; g < size.group[0]; ++g) {
+            for (cldnn::tensor::value_type b = 0; b < batch_size; ++b) {
+                for (cldnn::tensor::value_type f = 0; f < size.feature[0]; ++f) {
+                    for (cldnn::tensor::value_type w = 0; w < size.spatial[3]; ++w) {
+                        for (cldnn::tensor::value_type z = 0; z < size.spatial[2]; ++z) {
+                            for (cldnn::tensor::value_type y = 0; y < size.spatial[1]; ++y) {
+                                cldnn::tensor t(cldnn::group(g), cldnn::batch(b), cldnn::feature(f), cldnn::spatial(0, y, z, w));
+                                size_t input_it = mem->get_layout().get_linear_offset(t);
+
+                                for (cldnn::tensor::value_type x = 0; x < size.spatial[0]; ++x, input_it += x_pitch) {
+                                    if (cnt < output_num) {
+                                        buffer << std::fixed << std::setprecision(6) << static_cast<float>(mem_ptr[input_it]) << std::endl;
+                                    }
+                                    cnt++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        for (size_t i = 0; i < lock.size(); ++i) {
+            buffer << std::fixed << std::setprecision(6) << static_cast<float>(mem_ptr[i]) << std::endl;
+        }
+    }
+    std::cout << buffer.str();
+}
+
 layout gather_inst::calc_output_layout(gather_node const& node, kernel_impl_params const& impl_param) {
     auto desc = impl_param.typed_desc<gather>();
 
@@ -144,6 +217,17 @@ void gather_inst::update_output_memory() {
 
     if (_node != nullptr)
         build_deps();
+
+    std::string tmp = id();
+    std::string match("SecondStagePostprocessor/BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/ClipToWindow/Gather/GatherV2_6");
+    auto found = tmp.find(match);
+    if (found != std::string::npos) {
+        std::cout << tmp << " in gather.cpp to " << match << std::endl;
+        // mem_lock<ov::float16, mem_lock_type::read> mem_lock(input_memory_ptr(), get_network().get_stream());
+        // auto data = mem_lock.data();
+        dump2<ov::float16>(input_memory_ptr(), get_network().get_stream(), false, 10);
+        dump2<ov::float16>(dependencies().at(0).first->output_memory_ptr(), get_network().get_stream(), false, 10);
+    }
 
     GPU_DEBUG_TRACE_DETAIL << id() << " : update_output_memory with mem of input " << get_node().get_dependency(0).id()
                            << " : " << input_memory_ptr()->buffer_ptr() << std::endl;

@@ -268,6 +268,9 @@ void propagate_formats_rec(std::map<program_node*, format::type>& fmt_map,
 
     fmt = travel_direction_wrapper<dir>::first(first_fmt, second_fmt);
     fmt_map.at(node) = fmt;
+    if (node->id() == "nonzero:NonZero_203410") {
+        std::cout << "id = " << node->id() << std::endl;
+    }
     GPU_DEBUG_LOG << "Propagate_formats_rec: " << node->id() << " - " << fmt_to_str(fmt) << std::endl;
 
     for (auto next : travel_direction_wrapper<dir>::next_nodes(node)) {

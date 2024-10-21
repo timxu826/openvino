@@ -58,6 +58,80 @@
 namespace cldnn {
 namespace {
 
+
+template <class T>
+void dump(memory::ptr mem, stream& stream, bool dump_raw, int output_num) {
+    auto&& size = mem->get_layout().get_tensor();
+
+    GPU_DEBUG_GET_INSTANCE(debug_config);
+    auto batch_size = std::max(std::min(debug_config->dump_layers_limit_batch, size.batch[0]), 1);
+    tensor tmp_size(size);
+    tmp_size.batch[0] = batch_size;
+    if (tmp_size == size) {
+        std::cout << "shape: " << size.to_string() << " ";
+        std::cout << "(count: " << size.count()
+                    << (dump_raw ? " raw data" : "") << std::endl;
+    } else {
+        std::cout << "shape: " << tmp_size.to_string() << " ";
+        std::cout << "(count: " << tmp_size.count()
+                    << ", original shape: " << size.to_string() << ")"
+                    << (dump_raw ? " raw data" : "") << std::endl;
+    }
+
+    if (size.count() == 0) {
+        std::cout << "Empty buffer" << std::endl;
+        return;
+    }
+
+    mem_lock<T, mem_lock_type::read> lock(mem, stream);
+    auto mem_ptr = lock.data();
+
+    auto layout = mem->get_layout();
+    size_t x_pitch;
+
+    try {
+        auto tensor_x0 = tensor(batch(0), feature(0), spatial(0, 0, 0, 0));
+        auto tensor_x1 = tensor(batch(0), feature(0), spatial(1, 0, 0, 0));
+        auto x0 = layout.get_linear_offset(tensor_x0);
+        auto x1 = layout.get_linear_offset(tensor_x1);
+        x_pitch =  (x1 - x0);
+    } catch (...) {
+        // When spatial size of x=0, x_pitch is meaningless
+        x_pitch = 0;
+    }
+    std::stringstream buffer;
+
+    int cnt = 0;
+    if (!dump_raw) {
+        for (cldnn::tensor::value_type g = 0; g < size.group[0]; ++g) {
+            for (cldnn::tensor::value_type b = 0; b < batch_size; ++b) {
+                for (cldnn::tensor::value_type f = 0; f < size.feature[0]; ++f) {
+                    for (cldnn::tensor::value_type w = 0; w < size.spatial[3]; ++w) {
+                        for (cldnn::tensor::value_type z = 0; z < size.spatial[2]; ++z) {
+                            for (cldnn::tensor::value_type y = 0; y < size.spatial[1]; ++y) {
+                                cldnn::tensor t(cldnn::group(g), cldnn::batch(b), cldnn::feature(f), cldnn::spatial(0, y, z, w));
+                                size_t input_it = mem->get_layout().get_linear_offset(t);
+
+                                for (cldnn::tensor::value_type x = 0; x < size.spatial[0]; ++x, input_it += x_pitch) {
+                                    if (cnt < output_num) {
+                                        buffer << std::fixed << std::setprecision(6) << static_cast<float>(mem_ptr[input_it]) << std::endl;
+                                    }
+                                    cnt++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        for (size_t i = 0; i < lock.size(); ++i) {
+            buffer << std::fixed << std::setprecision(6) << static_cast<float>(mem_ptr[i]) << std::endl;
+        }
+    }
+    std::cout << buffer.str();
+}
+
 template <typename T>
 bool is_optimized_output_user(const T user) {
     if (user->can_be_optimized()) {
@@ -425,7 +499,14 @@ void primitive_inst::update_shape() {
 
     _impl_params->memory_deps = memory_deps;
 
-
+    std::string tmp = id();
+    std::string match("NonMaxSuppression_181829_NMSGather");
+    auto found = tmp.find(match);
+    if (found != std::string::npos) {
+        std::cout << tmp << " equal to " << match << std::endl;
+        // auto mem_ptr = lock.data();
+        // dump<ov::float16>(output_memory_ptr(), get_network().get_stream(), false, 10);
+    }
     auto new_layouts = _node->type()->calc_output_layouts(*_node, *_impl_params);
     for (size_t idx = 0; idx != new_layouts.size(); ++idx) {
         auto& new_layout = new_layouts[idx];
@@ -1437,6 +1518,7 @@ void primitive_inst::do_runtime_in_place_concat() {
         concat_preds.push_back(pred.first);
     }
 
+
     GPU_DEBUG_TRACE_DETAIL << "[In place concat] Preparing for runtime buffer fusing" << std::endl;
     // Do shape_infer for all concat's preds and concat
     for (auto pred : concat_preds) {
@@ -1447,6 +1529,19 @@ void primitive_inst::do_runtime_in_place_concat() {
         }
     }
     GPU_DEBUG_TRACE_DETAIL << "[In place concat] update shape for " << concat_inst->id() << std::endl;
+    std::string tmp = concat_inst->id();
+    std::string match("SecondStagePostprocessor/BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/ClipToWindow/concat");
+    auto found = tmp.find(match);
+    if (found != std::string::npos) {
+        std::cout << tmp << " inplace concat to " << match << std::endl;
+        // auto mem_ptr = lock.data();
+        if (concat_inst->input_memory_ptr() != nullptr) {
+            dump<ov::float16>(concat_inst->input_memory_ptr(), get_network().get_stream(), false, 10);
+        }
+        if (concat_inst->output_memory_ptr() != nullptr) {
+            dump<ov::float16>(concat_inst->output_memory_ptr(), get_network().get_stream(), false, 10);
+        }
+    }
     concat_inst->update_shape();
     concat_inst->update_shape_done_by_other = true;
     layout concat_layout = concat_inst->_impl_params->get_output_layout();
@@ -1483,6 +1578,16 @@ void primitive_inst::do_runtime_in_place_concat() {
 
     concat_inst->set_can_be_optimized(true);
     GPU_DEBUG_TRACE_DETAIL << "[In place concat] " << concat_inst->id() << ": can_be_optimized " << std::endl;
+    if (found != std::string::npos) {
+        std::cout << tmp << " inplace concat after to " << match << std::endl;
+        // auto mem_ptr = lock.data();
+        if (concat_inst->input_memory_ptr() != nullptr) {
+            dump<ov::float16>(concat_inst->input_memory_ptr(), get_network().get_stream(), false, 10);
+        }
+        if (concat_inst->output_memory_ptr() != nullptr) {
+            dump<ov::float16>(concat_inst->output_memory_ptr(), get_network().get_stream(), false, 10);
+        }
+    }
 }
 
 void primitive_inst::do_runtime_in_place_crop() {
@@ -1563,8 +1668,25 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
     GPU_DEBUG_GET_INSTANCE(debug_config);
     GPU_DEBUG_TRACE_DETAIL << "-----------------------------------------------------------------" << std::endl;
     GPU_DEBUG_TRACE_DETAIL << "Execute " << id() << " (type: " << _impl_params->desc->type_string() << ") " << std::endl;
+    static memory::ptr concat_mem_ptr;
     for (size_t i = 0; i < _deps.size(); ++i) {
         GPU_DEBUG_TRACE_DETAIL << "- inputs[" << i << "] : " <<  _deps[i].first->id() << std::endl;
+        std::string tmp = _deps[i].first->id();
+        std::string match("NonMaxSuppression_181829");
+        auto found = tmp.find(match);
+        if (found != std::string::npos) {
+            std::cout << tmp << " equal to " << match << std::endl;
+            // auto mem_ptr = lock.data();
+            dump<ov::float16>(_deps[i].first->output_memory_ptr(), get_network().get_stream(), false, 10);
+        }
+    }
+    std::string tmp_out = id();
+    std::string match_out("NonZero_203410");
+    auto found_2 = tmp_out.find(match_out);
+    if (found_2 != std::string::npos) {
+        std::cout << "buffer_ptr: " << concat_mem_ptr << std::endl;
+        // auto mem_ptr = lock.data();
+        dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
     }
     GPU_DEBUG_TRACE_DETAIL << "-----------------------------------------------------------------" << std::endl;
     bool need_args_update = false;
@@ -1602,6 +1724,12 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
             auto ev = get_network().get_stream().create_user_event(true);
             update_shape_done_by_other = false; // reset
             return ev;
+        }
+
+        if (found_2 != std::string::npos) {
+            std::cout << tmp_out << " equal to " << match_out << std::endl;
+            // auto mem_ptr = lock.data();
+            dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
         }
 
         // Check successor reorder if layouts are same
@@ -1645,6 +1773,12 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
             return outputs.at(last_prim_id).get_event();
         }
 
+        if (found_2 != std::string::npos) {
+            std::cout << tmp_out << " equal to " << match_out << std::endl;
+            // auto mem_ptr = lock.data();
+            dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
+        }
+
         // Try update impl if current impl is dynamic because opt kernel may be added to impl cache through async compilation.
         // Only try update weight and realloc when impl is updated.
         const bool can_use_async_compilation = use_async_compilation();
@@ -1681,13 +1815,33 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
         return false;
     };
 
+    if (found_2 != std::string::npos) {
+        std::cout << tmp_out << " equal to " << match_out << std::endl;
+        // auto mem_ptr = lock.data();
+        dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
+    }
+
     bool use_shared_kernels = _node->get_program().get_config().get_property(ov::intel_gpu::hint::enable_kernels_reuse);
 
     // Output buffer may be changed under the following conditions, so we need to set args to kernel on each iteration
     if ((is_dynamic() && need_args_update) || has_mutable_input() || is_output() || has_dynamic_dependencies_insts(this) || use_shared_kernels) {
         set_arguments();
     }
+
+    if (found_2 != std::string::npos) {
+        std::cout << tmp_out << " equal to " << match_out << std::endl;
+        // auto mem_ptr = lock.data();
+        dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
+    }
+
     on_execute();
+
+    if (found_2 != std::string::npos) {
+        std::cout << tmp_out << " equal to " << match_out << std::endl;
+        // auto mem_ptr = lock.data();
+        dump<ov::float16>(output_memory_ptr(), get_network().get_stream(), false, 10);
+        dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
+    }
 
     if (!_node->is_type<condition>() && !_node->is_type<loop>()) {
         for (size_t i = 0; i < _outputs.size(); ++i) {
@@ -1704,6 +1858,15 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
     GPU_DEBUG_TRACE << id() << ": execute " << _impl->get_kernel_name() << " (is_dynamic=" << _impl->is_dynamic()
                     << ", "
                     << "can_be_optimized=" << can_be_optimized() << ")" << std::endl;
+
+    std::string tmp = id();
+    std::string match("SecondStagePostprocessor/BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/ClipToWindow/concat");
+    auto found = tmp.find(match);
+    if (found != std::string::npos) {
+        std::cout << tmp << " equal to " << match << std::endl;
+        // auto mem_ptr = lock.data();
+        dump<ov::float16>(output_memory_ptr(), get_network().get_stream(), false, 10);
+    }
 
     const bool out_of_order_queue = get_network().get_stream().get_queue_type() == QueueTypes::out_of_order;
     if (_exec_deps.empty() && dependencies.empty()) {
@@ -1734,9 +1897,21 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
         dependencies = {grouped_ev};
     }
 
+    if (found_2 != std::string::npos) {
+        std::cout << tmp_out << " equal to " << match_out << std::endl;
+        // auto mem_ptr = lock.data();
+        dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
+    }
+
     {
         GPU_DEBUG_PROFILED_STAGE(instrumentation::pipeline_stage::inference);
         auto ev = _impl->execute(dependencies, *this);
+
+        if (found_2 != std::string::npos) {
+            std::cout << tmp_out << " equal to " << match_out << std::endl;
+            // auto mem_ptr = lock.data();
+            dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
+        }
 
         GPU_DEBUG_IF(!debug_config->dump_profiling_data.empty()) {
             get_network().get_stream().wait_for_events({ev});
@@ -1749,6 +1924,19 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
                     }
                 }
             }
+        }
+
+        if (found_2 != std::string::npos) {
+            std::cout << tmp_out << " equal to " << match_out << std::endl;
+            // auto mem_ptr = lock.data();
+            dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
+        }
+
+        if (found != std::string::npos) {
+            std::cout << tmp << " equal to " << match << std::endl;
+            // auto mem_ptr = lock.data();
+            concat_mem_ptr = output_memory_ptr();
+            dump<ov::float16>(concat_mem_ptr, get_network().get_stream(), false, 10);
         }
 
         return ev;
