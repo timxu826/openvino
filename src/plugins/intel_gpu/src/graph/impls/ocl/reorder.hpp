@@ -27,6 +27,10 @@ struct ReorderImplementationManager : public ImplementationManager {
 
         return true;
     }
+
+    in_out_fmts_t query_formats(const program_node& node) const override {
+        return {};
+    }
 };
 
 }  // namespace ocl
