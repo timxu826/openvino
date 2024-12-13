@@ -60,7 +60,9 @@ ProgramBuilder::ProgramBuilder(std::shared_ptr<ov::Model> model, cldnn::engine& 
                                bool partial_build,
                                std::shared_ptr<ov::threading::IStreamsExecutor> task_executor,
                                std::shared_ptr<cldnn::ICompilationContext> compilation_context,
-                               bool is_inner_program)
+                               bool is_inner_program,
+                               std::vector<std::pair<cldnn::primitive_id, cldnn::primitive_id> >
+                               input_backedges)
     : m_model(model)
     , m_config(config)
     , m_engine(engine)
@@ -113,6 +115,9 @@ ProgramBuilder::ProgramBuilder(std::shared_ptr<ov::Model> model, cldnn::engine& 
     } else {
         m_config.set_property(ov::intel_gpu::max_kernels_per_batch(8));
     }
+
+    // m_program->set_loop();
+    // m_program->set_backages(input_backedges);
 
     m_program = build(ops, partial_build, is_inner_program);
 }

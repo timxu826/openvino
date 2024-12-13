@@ -1250,6 +1250,10 @@ void program::remove_nodes(std::vector<program_node*>& to_remove) {
     }
 }
 
+void program::set_backages(std::vector<std::pair<primitive_id, primitive_id> > input_backedges) {
+    loop_backedges = input_backedges;
+}
+
 // TODO: break this function into number of smaller ones + add per-primitive fields (possibly use
 // primitive_inst::to_string?)
 void program::dump_program(const char* stage, bool with_full_info) const {

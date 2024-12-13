@@ -83,7 +83,9 @@ public:
     ProgramBuilder(std::shared_ptr<ov::Model> model, cldnn::engine& engine, const ExecutionConfig& config, bool partialBuild = false,
             std::shared_ptr<ov::threading::IStreamsExecutor> task_executor = nullptr,
             std::shared_ptr<cldnn::ICompilationContext> compilation_context = nullptr,
-            bool innerProgram = false);
+            bool innerProgram = false,
+            std::vector<std::pair<cldnn::primitive_id, cldnn::primitive_id> > input_backedges
+            = std::vector<std::pair<cldnn::primitive_id, cldnn::primitive_id> >());
     ProgramBuilder(cldnn::engine& engine, const ExecutionConfig& config);
 
     static const cldnn::primitive_id m_preProcessTag;

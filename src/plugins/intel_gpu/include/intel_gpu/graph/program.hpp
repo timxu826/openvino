@@ -158,6 +158,9 @@ public:
     }  // ToDo: redesign reorder-inputs pass to make it const as_well as get_engine and get options
     bool is_body_program() const { return _is_body_program; }
     bool can_be_optimized() const { return _can_be_optimized; }
+    bool is_loop() const { return _is_loop; }
+    void set_loop() { _is_loop = true; }
+    std::vector<std::pair<primitive_id, primitive_id> > get_backedges() const { return loop_backedges; }
     bool is_internal_program() const { return is_internal; }
     const nodes_ordering& get_processing_order() const;
     nodes_ordering& get_processing_order();
@@ -241,6 +244,8 @@ public:
 
     uint32_t get_id() const { return prog_id; }
 
+    void set_backages(std::vector<std::pair<primitive_id, primitive_id> > backedges);
+
     static ptr build_program(engine& engine,
                              const topology& topology,
                              const ExecutionConfig& config,
@@ -308,6 +313,8 @@ private:
     bool _is_body_program;
     // if subgraph can be optimized if it consists of only inputs and corresponding outputs
     bool _can_be_optimized;
+    bool _is_loop;
+    std::vector<std::pair<primitive_id, primitive_id> > loop_backedges;
     std::unique_ptr<ImplementationsCache> _impls_cache;
     const size_t _impls_cache_capacity = 300;
     std::shared_ptr<ICompilationContext> _compilation_context;

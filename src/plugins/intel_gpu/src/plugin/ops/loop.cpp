@@ -304,7 +304,14 @@ static void CreateCommonLoopOp(ProgramBuilder& p, const std::shared_ptr<ov::op::
     config.set_property(ov::intel_gpu::allow_new_shape_infer(is_dynamic));
 
     // get body program from ov::Model
-    ProgramBuilder prog(ov_model, p.get_engine(), config, false, p.get_task_executor(), p.get_compilation_context(), true);
+    std::vector<std::pair<cldnn::primitive_id, cldnn::primitive_id> > input_backedges;
+    // for (auto &&prim_id : back_edges) {
+    //     std::pair<cldnn::program_node*, cldnn::program_node*> p1(&body_program->get_node(prim_id.from), &body_program->get_node(prim_id.to));
+    //     input_backedges.push_back(p1);
+    //     body_program->set_backages(input_backedges);
+    // }
+
+    ProgramBuilder prog(ov_model, p.get_engine(), config, false, p.get_task_executor(), p.get_compilation_context(), true, input_backedges);
     auto body_program = prog.get_compiled_program();
 
     GPU_DEBUG_LOG << "* trip_count_id                 : " << trip_count_id << std::endl;
